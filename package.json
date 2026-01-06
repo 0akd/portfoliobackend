@@ -20,6 +20,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.7",
     "@libsql/client": "^0.15.15",
+    "@supabase/supabase-js": "^2.89.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.3",
