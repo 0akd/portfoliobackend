@@ -1,17 +1,27 @@
-// src/index.ts
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+
+// FIX: Append .js to all local imports
 import todos from './todos.js';
-import vault from './vault.js'; // Import the new vault file
+import vault from './vault.js';
+import mistake from './mistake.js';
+import correctness from './correctness.js';
+import courses from './courses.js';
 
 const app = new Hono();
 
-app.use('/*', cors());
+// 1. Global CORS
+app.use('/*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
 
-// Existing Todos route
+// 2. Mount Routes
 app.route('/todos', todos);
-
-// NEW: Mount the vault app at '/vault'
-app.route('/vault', vault); 
+app.route('/vault', vault);
+app.route('/mistake', mistake);
+app.route('/correctness', correctness);
+app.route('/courses', courses);
 
 export default app;
