@@ -19,10 +19,13 @@ const getDb = (env: Bindings) => {
 const normalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 const cleanArray = (arr: any) => (!Array.isArray(arr) ? [] : arr.filter((i: any) => i && typeof i === 'string' && i.trim() !== ""));
 
-// --- EXPORT ---
+// ... imports and existing setup ...
+
+// --- EXPORT (Already working, but good to verify) ---
 app.get('/export', async (c) => {
   const db = getDb(c.env);
   try {
+    // Drizzle with mode: 'json' returns these fields as Arrays (parsed JSON)
     const allTodos = await db.select().from(todos).all();
     const allHistory = await db.select().from(todoHistory).all();
     return c.json({ todos: allTodos, history: allHistory });
@@ -31,7 +34,7 @@ app.get('/export', async (c) => {
   }
 });
 
-// --- IMPORT ---
+// --- IMPORT (NEEDS UPDATE) ---
 app.post('/import', async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json();
@@ -46,8 +49,31 @@ app.post('/import', async (c) => {
     await db.delete(todos).run();
 
     if (newTodos.length > 0) {
-      // Direct insert (Assumes backup 'category' is already a string)
-      await db.insert(todos).values(newTodos).run();
+      // PRE-PROCESSING: Ensure JSON fields are handled correctly
+      // Drizzle insert expects the value to be the Object/Array if mode='json' is set in schema
+      // OR a string if we were doing raw SQL. Since we use db.insert(todos), we pass the Array.
+      
+      const cleanTodos = newTodos.map((t: any) => {
+          // If the exported file has them as strings (e.g. legacy export), parse them.
+          // If they are already arrays (standard export), keep them.
+          let sub = t.subtasks;
+          let req = t.requiredItems;
+          let proc = t.procedure;
+
+          if (typeof sub === 'string') try { sub = JSON.parse(sub) } catch(e) { sub = [] }
+          if (typeof req === 'string') try { req = JSON.parse(req) } catch(e) { req = [] }
+          if (typeof proc === 'string') try { proc = JSON.parse(proc) } catch(e) { proc = [] }
+
+          return {
+              ...t,
+              // Drizzle will stringify these automatically because schema has { mode: 'json' }
+              subtasks: sub || [],
+              requiredItems: req || [],
+              procedure: proc || []
+          };
+      });
+
+      await db.insert(todos).values(cleanTodos).run();
     }
     
     if (newHistory.length > 0) {
@@ -61,6 +87,7 @@ app.post('/import', async (c) => {
   }
 });
 
+// ... rest of your routes (PATCH history, GET, POST, RESET, PATCH id, TOGGLE, DELETE) ...
 // 1. HISTORY ROUTE
 app.patch('/history/:todoId/:sessionId', async (c) => {
   const db = getDb(c.env);
@@ -164,23 +191,35 @@ app.post('/reset', async (c) => {
   } catch (error) { return c.json({ error: 'Reset failed' }, 500); }
 });
 
-// 5. UPDATE TASK (Simple String)
+const cleanSubtasks = (arr: any) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((s: any) => ({
+        id: s.id || crypto.randomUUID(),
+        text: String(s.text || ""),
+        completed: Boolean(s.completed)
+    })).filter(s => s.text.trim() !== "");
+};
+
+
+
+
 app.patch('/:id', async (c) => { 
   const db = getDb(c.env);
   const id = Number(c.req.param('id'));
   const body = await c.req.json();
+  
   const updateData: any = {};
-  
-  if (body.unit !== undefined) updateData.unit = body.unit;
   if (body.text !== undefined) updateData.text = body.text;
-  
-  // DIRECT UPDATE STRING
+  if (body.unit !== undefined) updateData.unit = body.unit;
   if (body.category !== undefined) updateData.category = body.category ? normalize(body.category.toString().trim()) : '';
-
-  if (body.requiredItems !== undefined) updateData.requiredItems = cleanArray(body.requiredItems);
-  if (body.procedure !== undefined) updateData.procedure = cleanArray(body.procedure);
   if (body.activeCounter !== undefined) updateData.activeCounter = Number(body.activeCounter);
   if (body.activeTimer !== undefined) updateData.activeTimer = Number(body.activeTimer);
+  
+  if (body.requiredItems !== undefined) updateData.requiredItems = JSON.stringify(cleanArray(body.requiredItems));
+  if (body.procedure !== undefined) updateData.procedure = JSON.stringify(cleanArray(body.procedure));
+  
+  // NEW: Handle subtasks
+  if (body.subtasks !== undefined) updateData.subtasks = JSON.stringify(cleanSubtasks(body.subtasks));
 
   try {
     if (body.priority !== undefined) {
@@ -188,12 +227,15 @@ app.patch('/:id', async (c) => {
       await db.run(sql`UPDATE todos SET priority = priority + 1 WHERE priority >= ${newPriority} AND id != ${id}`);
       updateData.priority = newPriority;
     }
-    if (Object.keys(updateData).length === 0) return c.json({ success: true });
-    await db.update(todos).set(updateData).where(eq(todos.id, id));
-    return c.json({ success: true });
-  } catch (error) { return c.json({ error: 'Update failed' }, 500); }
-});
 
+    if (Object.keys(updateData).length > 0) {
+      await db.update(todos).set(updateData).where(eq(todos.id, id)).run();
+    }
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ error: 'Update failed' }, 500);
+  }
+});
 // 6. TOGGLE
 app.patch('/:id/toggle', async (c) => { 
   const db = getDb(c.env);

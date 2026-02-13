@@ -6,14 +6,19 @@ export const todos = sqliteTable('todos', {
   text: text('text').notNull(),
   priority: integer('priority').default(0), 
   completed: integer('completed', { mode: 'boolean' }).default(false),
-category: text('category').default(''),
-    unit: text('unit').default('units'), 
+  category: text('category').default(''),
+  unit: text('unit').default('units'), 
+  
+  // JSON arrays
   requiredItems: text('required_items', { mode: 'json' }).$type<string[]>().default([]),
   procedure: text('procedure', { mode: 'json' }).$type<string[]>().default([]),
+  
+  // NEW: Subtasks array of objects { id: string, text: string, completed: boolean }
+  subtasks: text('subtasks', { mode: 'json' }).$type<{id: string, text: string, completed: boolean}[]>().default([]),
 
-  // NEW: Live Metrics
+  // Live Metrics
   activeCounter: integer('active_counter').default(0),
-  activeTimer: integer('active_timer').default(0), // stored in seconds
+  activeTimer: integer('active_timer').default(0), 
 });
 
 export const todoHistory = sqliteTable('todo_history', {
@@ -22,8 +27,6 @@ export const todoHistory = sqliteTable('todo_history', {
   timestamp: text('timestamp').notNull(), 
   sessionId: text('session_id').notNull(), 
   completed: integer('completed', { mode: 'boolean' }).default(false),
-  
-  // NEW: Historical Snapshots
   snapshotCounter: integer('snapshot_counter').default(0),
   snapshotTimer: integer('snapshot_timer').default(0),
 });
